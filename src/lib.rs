@@ -47,6 +47,25 @@ impl MerkleTree {
         }
         hashes[0]
     }
+
+    pub fn verify(&self, leaf: [u8; 32], index: usize, proof: &[[u8; 32]]) -> bool {
+        let mut hash = leaf;
+
+        for level in 0..proof.len() {
+            let (left, right) = if (index >> level) & 1 == 0 {
+                (hash, proof[level])
+            } else {
+                (proof[level], hash)
+            };
+
+            hash = Sha256::digest([left, right].concat())
+                .as_slice()
+                .try_into()
+                .unwrap();
+        }
+
+        hash == self.root()
+    }
 }
 
 impl Default for MerkleTree {
