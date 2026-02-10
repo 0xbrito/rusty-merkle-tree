@@ -8,7 +8,7 @@ pub struct MerkleTree {
 
 impl MerkleTree {
     pub fn new() -> Self {
-        Self { leaves: Vec::new() }
+        Self::from_slice(&[])
     }
 
     pub fn from_slice(data: &[[u8; 32]]) -> Self {
@@ -21,10 +21,6 @@ impl MerkleTree {
     }
 
     pub fn root(&self) -> [u8; 32] {
-        if self.leaves.is_empty() {
-            return ZERO_BYTES;
-        }
-
         if self.leaves.len() == 1 {
             return self.leaves[0];
         }
