@@ -20,7 +20,7 @@ impl MerkleTree {
         Self { leaves }
     }
 
-    fn compute_root(&self) -> [u8; 32] {
+    pub fn root(&self) -> [u8; 32] {
         if self.leaves.is_empty() {
             return ZERO_BYTES;
         }
@@ -98,5 +98,55 @@ mod tests {
         assert_eq!(tree.leaves[5], ZERO_BYTES);
         assert_eq!(tree.leaves[6], ZERO_BYTES);
         assert_eq!(tree.leaves[7], ZERO_BYTES);
+    }
+
+    #[test]
+    fn root_with_no_leaves_return_zero_bytes() {
+        let tree = MerkleTree::from_slice(&[]);
+
+        let root = tree.root();
+        assert_eq!(root, ZERO_BYTES);
+    }
+
+    #[test]
+    fn root_with_single_leaf_return_that_leaf() {
+        let data = vec![[1; 32]];
+        let tree = MerkleTree::from_slice(&data);
+
+        let root = tree.root();
+        assert_eq!(root, data[0]);
+    }
+
+    #[test]
+    fn root_with_two_leaves_hashes_correctly() {
+        let data = [[1; 32], [2; 32]];
+        let tree = MerkleTree::from_slice(&data);
+
+        let expected = Sha256::digest([data[0], data[1]].concat());
+        assert_eq!(tree.root(), expected.as_slice());
+    }
+
+    #[test]
+    fn root_with_four_leaves() {
+        let data = [[1; 32], [2; 32], [3; 32], [4; 32]];
+        let tree = MerkleTree::from_slice(&data);
+
+        let h01 = Sha256::digest([data[0], data[1]].concat());
+        let h23 = Sha256::digest([data[2], data[3]].concat());
+        let expected = Sha256::digest([h01, h23].concat());
+
+        assert_eq!(tree.root(), expected.as_slice());
+    }
+
+    #[test]
+    fn root_with_three_leaves_pads_and_hashes() {
+        let data = [[1; 32], [2; 32], [3; 32]];
+        let tree = MerkleTree::from_slice(&data);
+
+        let h01 = Sha256::digest([data[0], data[1]].concat());
+        let h23 = Sha256::digest([data[2], ZERO_BYTES].concat());
+        let expected = Sha256::digest([h01, h23].concat());
+
+        assert_eq!(tree.root(), expected.as_slice());
     }
 }
