@@ -8,7 +8,7 @@ pub struct MerkleTree {
 
 impl MerkleTree {
     pub fn new() -> Self {
-        Self { leaves: Vec::new() }
+        Self::from_slice(&[])
     }
 
     pub fn from_slice(data: &[[u8; 32]]) -> Self {
@@ -21,31 +21,65 @@ impl MerkleTree {
     }
 
     pub fn root(&self) -> [u8; 32] {
-        if self.leaves.is_empty() {
-            return ZERO_BYTES;
-        }
+        let mut level = self.leaves.clone();
 
-        if self.leaves.len() == 1 {
-            return self.leaves[0];
-        }
-
-        let mut hashes = self.leaves.clone();
-        while hashes.len() > 1 {
-            let pair_count: usize = hashes.len() / 2;
+        while level.len() > 1 {
+            let pair_count: usize = level.len() / 2;
             let mut next_level = Vec::with_capacity(pair_count);
             for i in 0..pair_count {
-                let left = hashes[i * 2];
-                let right = hashes[i * 2 + 1];
+                let left = level[i * 2];
+                let right = level[i * 2 + 1];
 
-                let hash: [u8; 32] = Sha256::digest([left, right].concat())
-                    .as_slice()
-                    .try_into()
-                    .unwrap();
+                let hash: [u8; 32] = Self::hash_pair(left, right);
                 next_level.push(hash);
             }
-            hashes = next_level;
+            level = next_level;
         }
-        hashes[0]
+        level[0]
+    }
+
+    pub fn verify(&self, leaf: [u8; 32], index: usize, proof: &[[u8; 32]]) -> bool {
+        let mut hash = leaf;
+
+        for (level, sibling) in proof.iter().enumerate() {
+            let (left, right) = if (index >> level) & 1 == 0 {
+                (&hash, sibling)
+            } else {
+                (sibling, &hash)
+            };
+
+            hash = Self::hash_pair(*left, *right);
+        }
+
+        hash == self.root()
+    }
+
+    pub fn proof_for(&self, mut index: usize) -> Vec<[u8; 32]> {
+        let mut proof = Vec::new();
+        let mut level = self.leaves.clone();
+
+        while level.len() > 1 {
+            proof.push(level[index ^ 1]);
+
+            let pair_count: usize = level.len() / 2;
+            let mut next_level = Vec::with_capacity(pair_count);
+            for i in 0..pair_count {
+                let left = level[i * 2];
+                let right = level[i * 2 + 1];
+
+                let hash: [u8; 32] = Self::hash_pair(left, right);
+                next_level.push(hash);
+            }
+            level = next_level;
+
+            index /= 2;
+        }
+
+        proof
+    }
+
+    fn hash_pair(left: [u8; 32], right: [u8; 32]) -> [u8; 32] {
+        Sha256::digest([left, right].concat()).into()
     }
 }
 
@@ -58,6 +92,11 @@ impl Default for MerkleTree {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sha2::{Digest, Sha256};
+
+    fn hash(data: &[u8]) -> [u8; 32] {
+        Sha256::digest(data).into()
+    }
 
     #[test]
     fn from_slice_empty() {
@@ -154,5 +193,102 @@ mod tests {
         let expected = Sha256::digest([h01, h23].concat());
 
         assert_eq!(tree.root(), expected.as_slice());
+    }
+
+    #[test]
+    fn verify_valid_proof() {
+        let a = hash(b"a");
+        let b = hash(b"b");
+        let c = hash(b"c");
+        let d = hash(b"d");
+        let tree = MerkleTree::from_slice(&[a, b, c, d]);
+
+        let leaf = b;
+        let proof = [a, hash(&[c, d].concat())];
+
+        assert!(tree.verify(leaf, 1, &proof));
+    }
+
+    #[test]
+    fn verify_single_leaf_empty_proof() {
+        let a = hash(b"a");
+        let tree = MerkleTree::from_slice(&[a]);
+
+        assert!(tree.verify(a, 0, &[]));
+    }
+
+    #[test]
+    fn verify_wrong_leaf_returns_false() {
+        let a = hash(b"a");
+        let b = hash(b"b");
+        let c = hash(b"c");
+        let d = hash(b"d");
+        let tree = MerkleTree::from_slice(&[a, b, c, d]);
+
+        let leaf = hash(b"wrong");
+        let proof = [a, hash(&[c, d].concat())];
+
+        assert!(!tree.verify(leaf, 1, &proof));
+    }
+
+    #[test]
+    fn verify_tampered_proof_returns_false() {
+        let a = hash(b"a");
+        let b = hash(b"b");
+        let c = hash(b"c");
+        let d = hash(b"d");
+        let tree = MerkleTree::from_slice(&[a, b, c, d]);
+
+        let leaf = b;
+        let tampered_sibling = [0xFF; 32];
+        let proof = [tampered_sibling, hash(&[c, d].concat())];
+
+        assert!(!tree.verify(leaf, 1, &proof));
+    }
+
+    #[test]
+    fn proof_for_single_leaf_returns_empty() {
+        let tree = MerkleTree::new();
+
+        let proof = tree.proof_for(0);
+
+        assert_eq!(proof, Vec::<[u8; 32]>::from([]));
+    }
+
+    #[test]
+    fn proof_for_two_leaves() {
+        let a = hash(b"a");
+        let b = hash(b"b");
+        let tree = MerkleTree::from_slice(&[a, b]);
+
+        let proof = tree.proof_for(0);
+
+        assert_eq!(proof, vec![b]);
+    }
+
+    #[test]
+    fn proof_for_four_leaves_index_zero() {
+        let a = hash(b"a");
+        let b = hash(b"b");
+        let c = hash(b"c");
+        let d = hash(b"d");
+        let tree = MerkleTree::from_slice(&[a, b, c, d]);
+
+        let proof = tree.proof_for(0);
+
+        assert_eq!(proof, vec![b, hash(&[c, d].concat())]);
+    }
+
+    #[test]
+    fn proof_for_four_leaves_index_three() {
+        let a = hash(b"a");
+        let b = hash(b"b");
+        let c = hash(b"c");
+        let d = hash(b"d");
+        let tree = MerkleTree::from_slice(&[a, b, c, d]);
+
+        let proof = tree.proof_for(3);
+
+        assert_eq!(proof, vec![c, hash(&[a, b].concat())]);
     }
 }
