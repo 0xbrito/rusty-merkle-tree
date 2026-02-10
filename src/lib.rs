@@ -4,6 +4,7 @@ const ZERO_BYTES: [u8; 32] = [0; 32];
 
 pub struct MerkleTree {
     pub leaves: Vec<[u8; 32]>,
+    pub count: usize,
 }
 
 impl MerkleTree {
@@ -12,12 +13,39 @@ impl MerkleTree {
     }
 
     pub fn from_slice(data: &[[u8; 32]]) -> Self {
-        let mut leaves = data.to_vec();
-        let cap: usize = leaves.len().next_power_of_two();
+        let leaves_len = data.len();
+        let cap: usize = leaves_len.next_power_of_two();
 
-        leaves.resize(cap, ZERO_BYTES);
+        let mut leaves = vec![ZERO_BYTES; cap];
 
-        Self { leaves }
+        leaves[..leaves_len].copy_from_slice(data);
+
+        for (i, leaf) in data.iter().enumerate() {
+            leaves[i] = *leaf;
+        }
+
+        Self {
+            leaves,
+            count: leaves_len,
+        }
+    }
+
+    pub fn insert(&mut self, new_leaf: [u8; 32]) {
+        let current_len_with_padding = self.leaves.len();
+
+        if self.count == current_len_with_padding {
+            // expand cap and pad with zeroes
+            let new_cap = (current_len_with_padding + 1).next_power_of_two();
+            let mut leaves_new = vec![ZERO_BYTES; new_cap];
+
+            leaves_new[..self.leaves.len()].copy_from_slice(&self.leaves);
+
+            self.leaves = leaves_new;
+        }
+
+        let new_leaf_index = self.count;
+        self.leaves[new_leaf_index] = new_leaf;
+        self.count += 1;
     }
 
     pub fn root(&self) -> [u8; 32] {
@@ -141,6 +169,47 @@ mod tests {
 
         assert_eq!(tree.leaves.len(), 8);
         assert_eq!(tree.leaves[5], ZERO_BYTES);
+        assert_eq!(tree.leaves[6], ZERO_BYTES);
+        assert_eq!(tree.leaves[7], ZERO_BYTES);
+    }
+
+    #[test]
+    fn insert_full_tree_expands_to_a_power_of_two_and_pads_zeroes() {
+        let data = [[1; 32], [2; 32]];
+        let mut tree = MerkleTree::from_slice(&data);
+
+        let new_leaf = [3; 32];
+
+        assert_eq!(tree.leaves.len(), 2);
+
+        let root_before = tree.root();
+
+        tree.insert(new_leaf);
+
+        assert_ne!(tree.root(), root_before);
+        assert_eq!(tree.leaves.len(), 4);
+        assert_eq!(tree.count, 3);
+        assert_eq!(tree.leaves[2], new_leaf);
+        assert_eq!(tree.leaves[3], ZERO_BYTES);
+    }
+
+    #[test]
+    fn insert_into_tree_with_space() {
+        let data = [[1; 32], [2; 32], [3; 32], [4; 32], [5; 32]];
+        let mut tree = MerkleTree::from_slice(&data);
+
+        let new_leaf = [6; 32];
+
+        assert_eq!(tree.leaves.len(), 8);
+
+        let root_before = tree.root();
+
+        tree.insert(new_leaf);
+
+        assert_ne!(tree.root(), root_before);
+        assert_eq!(tree.leaves.len(), 8);
+        assert_eq!(tree.count, 6);
+        assert_eq!(tree.leaves[5], new_leaf);
         assert_eq!(tree.leaves[6], ZERO_BYTES);
         assert_eq!(tree.leaves[7], ZERO_BYTES);
     }
