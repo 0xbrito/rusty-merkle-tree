@@ -51,14 +51,14 @@ impl MerkleTree {
     pub fn verify(&self, leaf: [u8; 32], index: usize, proof: &[[u8; 32]]) -> bool {
         let mut hash = leaf;
 
-        for level in 0..proof.len() {
+        for (level, sibling) in proof.iter().enumerate() {
             let (left, right) = if (index >> level) & 1 == 0 {
-                (hash, proof[level])
+                (&hash, sibling)
             } else {
-                (proof[level], hash)
+                (sibling, &hash)
             };
 
-            hash = Sha256::digest([left, right].concat())
+            hash = Sha256::digest([*left, *right].concat())
                 .as_slice()
                 .try_into()
                 .unwrap();
@@ -77,6 +77,11 @@ impl Default for MerkleTree {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sha2::{Digest, Sha256};
+
+    fn hash(data: &[u8]) -> [u8; 32] {
+        Sha256::digest(data).into()
+    }
 
     #[test]
     fn from_slice_empty() {
@@ -173,5 +178,56 @@ mod tests {
         let expected = Sha256::digest([h01, h23].concat());
 
         assert_eq!(tree.root(), expected.as_slice());
+    }
+
+    #[test]
+    fn verify_valid_proof() {
+        let a = hash(b"a");
+        let b = hash(b"b");
+        let c = hash(b"c");
+        let d = hash(b"d");
+        let tree = MerkleTree::from_slice(&[a, b, c, d]);
+
+        let leaf = b;
+        let proof = [a, hash(&[c, d].concat())];
+
+        assert!(tree.verify(leaf, 1, &proof));
+    }
+
+    #[test]
+    fn verify_single_leaf_empty_proof() {
+        let a = hash(b"a");
+        let tree = MerkleTree::from_slice(&[a]);
+
+        assert!(tree.verify(a, 0, &[]));
+    }
+
+    #[test]
+    fn verify_wrong_leaf_returns_false() {
+        let a = hash(b"a");
+        let b = hash(b"b");
+        let c = hash(b"c");
+        let d = hash(b"d");
+        let tree = MerkleTree::from_slice(&[a, b, c, d]);
+
+        let leaf = hash(b"wrong");
+        let proof = [a, hash(&[c, d].concat())];
+
+        assert!(!tree.verify(leaf, 1, &proof));
+    }
+
+    #[test]
+    fn verify_tampered_proof_returns_false() {
+        let a = hash(b"a");
+        let b = hash(b"b");
+        let c = hash(b"c");
+        let d = hash(b"d");
+        let tree = MerkleTree::from_slice(&[a, b, c, d]);
+
+        let leaf = b;
+        let tampered_sibling = [0xFF; 32];
+        let proof = [tampered_sibling, hash(&[c, d].concat())];
+
+        assert!(!tree.verify(leaf, 1, &proof));
     }
 }
