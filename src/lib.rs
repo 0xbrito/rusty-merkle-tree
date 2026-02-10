@@ -245,4 +245,50 @@ mod tests {
 
         assert!(!tree.verify(leaf, 1, &proof));
     }
+
+    #[test]
+    fn proof_for_single_leaf_returns_empty() {
+        let tree = MerkleTree::new();
+
+        let proof = tree.proof_for(0);
+
+        assert_eq!(proof, Vec::<[u8; 32]>::from([]));
+    }
+
+    #[test]
+    fn proof_for_two_leaves() {
+        let a = hash(b"a");
+        let b = hash(b"b");
+        let tree = MerkleTree::from_slice(&[a, b]);
+
+        let proof = tree.proof_for(0);
+
+        assert_eq!(proof, vec![b]);
+    }
+
+    #[test]
+    fn proof_for_four_leaves_index_zero() {
+        let a = hash(b"a");
+        let b = hash(b"b");
+        let c = hash(b"c");
+        let d = hash(b"d");
+        let tree = MerkleTree::from_slice(&[a, b, c, d]);
+
+        let proof = tree.proof_for(0);
+
+        assert_eq!(proof, vec![b, hash(&[c, d].concat())]);
+    }
+
+    #[test]
+    fn proof_for_four_leaves_index_three() {
+        let a = hash(b"a");
+        let b = hash(b"b");
+        let c = hash(b"c");
+        let d = hash(b"d");
+        let tree = MerkleTree::from_slice(&[a, b, c, d]);
+
+        let proof = tree.proof_for(3);
+
+        assert_eq!(proof, vec![c, hash(&[a, b].concat())]);
+    }
 }
