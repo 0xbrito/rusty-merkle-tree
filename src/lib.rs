@@ -30,10 +30,7 @@ impl MerkleTree {
                 let left = level[i * 2];
                 let right = level[i * 2 + 1];
 
-                let hash: [u8; 32] = Sha256::digest([left, right].concat())
-                    .as_slice()
-                    .try_into()
-                    .unwrap();
+                let hash: [u8; 32] = Self::hash_pair(left, right);
                 next_level.push(hash);
             }
             level = next_level;
@@ -51,10 +48,7 @@ impl MerkleTree {
                 (sibling, &hash)
             };
 
-            hash = Sha256::digest([*left, *right].concat())
-                .as_slice()
-                .try_into()
-                .unwrap();
+            hash = Self::hash_pair(*left, *right);
         }
 
         hash == self.root()
@@ -73,10 +67,7 @@ impl MerkleTree {
                 let left = level[i * 2];
                 let right = level[i * 2 + 1];
 
-                let hash: [u8; 32] = Sha256::digest([left, right].concat())
-                    .as_slice()
-                    .try_into()
-                    .unwrap();
+                let hash: [u8; 32] = Self::hash_pair(left, right);
                 next_level.push(hash);
             }
             level = next_level;
@@ -85,6 +76,10 @@ impl MerkleTree {
         }
 
         proof
+    }
+
+    fn hash_pair(left: [u8; 32], right: [u8; 32]) -> [u8; 32] {
+        Sha256::digest([left, right].concat()).into()
     }
 }
 
