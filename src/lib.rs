@@ -21,17 +21,14 @@ impl MerkleTree {
     }
 
     pub fn root(&self) -> [u8; 32] {
-        if self.leaves.len() == 1 {
-            return self.leaves[0];
-        }
+        let mut level = self.leaves.clone();
 
-        let mut hashes = self.leaves.clone();
-        while hashes.len() > 1 {
-            let pair_count: usize = hashes.len() / 2;
+        while level.len() > 1 {
+            let pair_count: usize = level.len() / 2;
             let mut next_level = Vec::with_capacity(pair_count);
             for i in 0..pair_count {
-                let left = hashes[i * 2];
-                let right = hashes[i * 2 + 1];
+                let left = level[i * 2];
+                let right = level[i * 2 + 1];
 
                 let hash: [u8; 32] = Sha256::digest([left, right].concat())
                     .as_slice()
@@ -39,9 +36,9 @@ impl MerkleTree {
                     .unwrap();
                 next_level.push(hash);
             }
-            hashes = next_level;
+            level = next_level;
         }
-        hashes[0]
+        level[0]
     }
 
     pub fn verify(&self, leaf: [u8; 32], index: usize, proof: &[[u8; 32]]) -> bool {
@@ -61,6 +58,33 @@ impl MerkleTree {
         }
 
         hash == self.root()
+    }
+
+    pub fn proof_for(&self, mut index: usize) -> Vec<[u8; 32]> {
+        let mut proof = Vec::new();
+        let mut level = self.leaves.clone();
+
+        while level.len() > 1 {
+            proof.push(level[index ^ 1]);
+
+            let pair_count: usize = level.len() / 2;
+            let mut next_level = Vec::with_capacity(pair_count);
+            for i in 0..pair_count {
+                let left = level[i * 2];
+                let right = level[i * 2 + 1];
+
+                let hash: [u8; 32] = Sha256::digest([left, right].concat())
+                    .as_slice()
+                    .try_into()
+                    .unwrap();
+                next_level.push(hash);
+            }
+            level = next_level;
+
+            index /= 2;
+        }
+
+        proof
     }
 }
 
