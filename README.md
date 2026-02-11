@@ -60,7 +60,7 @@ tree.insert(leaf5);
 let root = tree.root();
 
 // Calculate the proof for a given index
-let proof = tree.proof_for(1);
+let proof = tree.proof_for(1).unwrap();
 
 // Verify
 let is_valid = tree.verify(leaf2, 1, &proof);
