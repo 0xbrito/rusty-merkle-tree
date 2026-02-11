@@ -12,6 +12,10 @@ impl MerkleTree {
         Self::from_slice(&[])
     }
 
+    pub fn from_vec(vec: Vec<[u8; 32]>) -> Self {
+        Self::from_slice(&vec)
+    }
+
     pub fn from_slice(data: &[[u8; 32]]) -> Self {
         let leaves_len = data.len();
         let cap: usize = leaves_len.next_power_of_two();
@@ -19,10 +23,6 @@ impl MerkleTree {
         let mut leaves = vec![ZERO_BYTES; cap];
 
         leaves[..leaves_len].copy_from_slice(data);
-
-        for (i, leaf) in data.iter().enumerate() {
-            leaves[i] = *leaf;
-        }
 
         Self {
             leaves,
@@ -114,6 +114,12 @@ impl MerkleTree {
 impl Default for MerkleTree {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl From<Vec<[u8; 32]>> for MerkleTree {
+    fn from(vec: Vec<[u8; 32]>) -> Self {
+        Self::from_vec(vec)
     }
 }
 

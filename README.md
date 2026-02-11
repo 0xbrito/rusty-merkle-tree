@@ -46,6 +46,12 @@ let tree = MerkleTree::new();
 // From slice
 let tree = MerkleTree::from_slice(&[leaf1, leaf2, leaf3]);
 
+// From vec
+let vec = vec![leaf1, leaf2, leaf3];
+let tree = MerkleTree::from_vec(vec);
+// with .into()
+let tree: MerkleTree = vec.into();
+
 // Insert a leaf
 tree.insert(leaf4);
 tree.insert(leaf5);
