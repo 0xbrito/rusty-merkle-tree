@@ -2,6 +2,11 @@ use sha2::{Digest, Sha256};
 
 const ZERO_BYTES: [u8; 32] = [0; 32];
 
+#[derive(Debug, PartialEq)]
+pub enum MerkleTreeError {
+    IndexOutOfBounds,
+}
+
 pub struct MerkleTree {
     pub leaves: Vec<[u8; 32]>,
     pub count: usize,
@@ -12,6 +17,10 @@ impl MerkleTree {
         Self::from_slice(&[])
     }
 
+    pub fn from_vec(vec: Vec<[u8; 32]>) -> Self {
+        Self::from_slice(&vec)
+    }
+
     pub fn from_slice(data: &[[u8; 32]]) -> Self {
         let leaves_len = data.len();
         let cap: usize = leaves_len.next_power_of_two();
@@ -19,10 +28,6 @@ impl MerkleTree {
         let mut leaves = vec![ZERO_BYTES; cap];
 
         leaves[..leaves_len].copy_from_slice(data);
-
-        for (i, leaf) in data.iter().enumerate() {
-            leaves[i] = *leaf;
-        }
 
         Self {
             leaves,
@@ -67,6 +72,10 @@ impl MerkleTree {
     }
 
     pub fn verify(&self, leaf: [u8; 32], index: usize, proof: &[[u8; 32]]) -> bool {
+        if index >= self.count {
+            return false;
+        }
+
         let mut hash = leaf;
 
         for (level, sibling) in proof.iter().enumerate() {
@@ -82,7 +91,11 @@ impl MerkleTree {
         hash == self.root()
     }
 
-    pub fn proof_for(&self, mut index: usize) -> Vec<[u8; 32]> {
+    pub fn proof_for(&self, mut index: usize) -> Result<Vec<[u8; 32]>, MerkleTreeError> {
+        if index >= self.count {
+            return Err(MerkleTreeError::IndexOutOfBounds);
+        }
+
         let mut proof = Vec::new();
         let mut level = self.leaves.clone();
 
@@ -103,7 +116,7 @@ impl MerkleTree {
             index /= 2;
         }
 
-        proof
+        Ok(proof)
     }
 
     fn hash_pair(left: [u8; 32], right: [u8; 32]) -> [u8; 32] {
@@ -114,6 +127,12 @@ impl MerkleTree {
 impl Default for MerkleTree {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl From<Vec<[u8; 32]>> for MerkleTree {
+    fn from(vec: Vec<[u8; 32]>) -> Self {
+        Self::from_vec(vec)
     }
 }
 
@@ -130,6 +149,7 @@ mod tests {
     fn from_slice_empty() {
         let tree = MerkleTree::from_slice(&[]);
 
+        assert_eq!(tree.count, 0);
         assert_eq!(tree.leaves.len(), 1);
         assert_eq!(tree.leaves[0], ZERO_BYTES);
     }
@@ -139,6 +159,7 @@ mod tests {
         let data = vec![[1; 32]];
         let tree = MerkleTree::from_slice(&data);
 
+        assert_eq!(tree.count, 1);
         assert_eq!(tree.leaves.len(), 1);
         assert_eq!(tree.leaves[0], data[0]);
     }
@@ -148,6 +169,7 @@ mod tests {
         let data = vec![[1; 32], [2; 32]];
         let tree = MerkleTree::from_slice(&data);
 
+        assert_eq!(tree.count, 2);
         assert_eq!(tree.leaves.len(), 2);
         assert_eq!(tree.leaves[0], data[0]);
         assert_eq!(tree.leaves[1], data[1]);
@@ -158,6 +180,7 @@ mod tests {
         let data = [[1; 32], [2; 32], [3; 32]];
         let tree = MerkleTree::from_slice(&data);
 
+        assert_eq!(tree.count, 3);
         assert_eq!(tree.leaves.len(), 4);
         assert_eq!(tree.leaves[3], ZERO_BYTES);
     }
@@ -167,6 +190,7 @@ mod tests {
         let data = [[1; 32], [2; 32], [3; 32], [4; 32], [5; 32]];
         let tree = MerkleTree::from_slice(&data);
 
+        assert_eq!(tree.count, 5);
         assert_eq!(tree.leaves.len(), 8);
         assert_eq!(tree.leaves[5], ZERO_BYTES);
         assert_eq!(tree.leaves[6], ZERO_BYTES);
@@ -183,10 +207,12 @@ mod tests {
         assert_eq!(tree.leaves.len(), 2);
 
         let root_before = tree.root();
+        let count_before = tree.count;
 
         tree.insert(new_leaf);
 
         assert_ne!(tree.root(), root_before);
+        assert_ne!(tree.count, count_before);
         assert_eq!(tree.leaves.len(), 4);
         assert_eq!(tree.count, 3);
         assert_eq!(tree.leaves[2], new_leaf);
@@ -203,10 +229,12 @@ mod tests {
         assert_eq!(tree.leaves.len(), 8);
 
         let root_before = tree.root();
+        let count_before = tree.count;
 
         tree.insert(new_leaf);
 
         assert_ne!(tree.root(), root_before);
+        assert_ne!(tree.count, count_before);
         assert_eq!(tree.leaves.len(), 8);
         assert_eq!(tree.count, 6);
         assert_eq!(tree.leaves[5], new_leaf);
@@ -215,10 +243,11 @@ mod tests {
     }
 
     #[test]
-    fn root_with_no_leaves_return_zero_bytes() {
+    fn root_empty_tree_returns_zero_bytes() {
         let tree = MerkleTree::from_slice(&[]);
 
         let root = tree.root();
+        assert_eq!(tree.count, 0);
         assert_eq!(root, ZERO_BYTES);
     }
 
@@ -316,10 +345,24 @@ mod tests {
     }
 
     #[test]
-    fn proof_for_single_leaf_returns_empty() {
-        let tree = MerkleTree::new();
+    fn verify_index_out_of_bounds_returns_false() {
+        let a = hash(b"a");
+        let b = hash(b"b");
+        let c = hash(b"c");
+        let d = hash(b"d");
+        let tree = MerkleTree::from_slice(&[a, b, c, d]);
 
-        let proof = tree.proof_for(0);
+        let leaf = b;
+        let proof = [a, hash(&[c, d].concat())];
+
+        assert!(!tree.verify(leaf, 10, &proof));
+    }
+
+    #[test]
+    fn proof_for_single_leaf_returns_empty() {
+        let tree = MerkleTree::from_slice(&[hash(b"a")]);
+
+        let proof = tree.proof_for(0).unwrap();
 
         assert_eq!(proof, Vec::<[u8; 32]>::from([]));
     }
@@ -330,7 +373,7 @@ mod tests {
         let b = hash(b"b");
         let tree = MerkleTree::from_slice(&[a, b]);
 
-        let proof = tree.proof_for(0);
+        let proof = tree.proof_for(0).unwrap();
 
         assert_eq!(proof, vec![b]);
     }
@@ -343,7 +386,7 @@ mod tests {
         let d = hash(b"d");
         let tree = MerkleTree::from_slice(&[a, b, c, d]);
 
-        let proof = tree.proof_for(0);
+        let proof = tree.proof_for(0).unwrap();
 
         assert_eq!(proof, vec![b, hash(&[c, d].concat())]);
     }
@@ -356,8 +399,21 @@ mod tests {
         let d = hash(b"d");
         let tree = MerkleTree::from_slice(&[a, b, c, d]);
 
-        let proof = tree.proof_for(3);
+        let proof = tree.proof_for(3).unwrap();
 
         assert_eq!(proof, vec![c, hash(&[a, b].concat())]);
+    }
+
+    #[test]
+    fn proof_for_index_out_of_bounds() {
+        let a = hash(b"a");
+        let b = hash(b"b");
+        let c = hash(b"c");
+        let d = hash(b"d");
+        let tree = MerkleTree::from_slice(&[a, b, c, d]);
+
+        let err = tree.proof_for(10);
+
+        assert_eq!(err, Err(MerkleTreeError::IndexOutOfBounds));
     }
 }
